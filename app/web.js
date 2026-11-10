@@ -1,0 +1,230 @@
+// 비너스 웹판 (아이폰용, 2026-10-11: 아이폰은 웹, 안드로이드는 apk)
+// 화면(index.html)은 안드로이드 앱과 같은 파일을 쓴다. 앱이 자바에 맡기던 일(window.Android)을 여기서 웹 방식으로 대신한다
+//  - 문자·전화: sms: / tel: 주소 (전송·통화는 문자·전화 앱에서 직접)
+//  - 명단 불러오기: 파일 고르기 → 엑셀(xlsx)·CSV를 이 안에서 읽음 (서버로 보내지 않음)
+//  - 약속·부재중 알림: 캘린더 일정 (구글 캘린더 링크). 웹은 정한 시각에 알림을 직접 띄울 수 없어서 캘린더 알림으로 대신한다
+//  - 연락처 저장: 연락처 파일(.vcf) → [새로운 연락처 생성]
+// 자료(명단·기록·문구)는 이 휴대폰 브라우저 저장소에만 있다
+(function(){
+  const VERSION = '2.3.5';
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const say = t => window.toast ? toast(t) : alert(t);
+  // 광고DB는 웹판에 넣지 않는다 (2026-10-24 지시: '광고 DB파트 말고는 다 똑같이 웹버전에'). 화면(index.html)이 이 값을 보고 숨긴다
+  window.noAd = true;
+
+  // ---------- 캘린더: 구글 캘린더 하나로 (1.8.2, 2026-10-11 지시: 아이폰도 구글 캘린더를 쓸 수 있으니 통합) ----------
+  // 구글 캘린더 새 일정 화면(링크)을 채워 연다. 알림은 구글 캘린더의 기본 알림을 따른다
+  const utc = ms => new Date(ms).toISOString().replace(/[-:]/g,'').replace(/\.\d+Z$/,'Z');
+  function calendar(title, begin, end, place, desc){
+    const q = new URLSearchParams({action:'TEMPLATE', text:title, dates:utc(begin)+'/'+utc(end), details:desc||'', location:place||''});
+    return openOut('https://calendar.google.com/calendar/render?' + q);
+  }
+
+  // 연락처 카드 한 장 (.vcf). 여러 장은 이어 붙이면 한 파일
+  function vcard(name, phone, notes){
+    const e = s => String(s||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
+    return ['BEGIN:VCARD','VERSION:3.0','N:;'+e(name)+';;;','FN:'+e(name),'TEL;TYPE=CELL:'+phone, notes?'NOTE:'+e(notes):'','END:VCARD'].filter(Boolean).join('\r\n');
+  }
+
+  // ---------- 파일 열기 (연락처 .vcf) ----------
+  // 홈 화면에 추가한 웹앱 안에서는 이런 파일이 잘 열리지 않아, 앱 범위 밖의 도우미 쪽(../f/open.html)을 사파리 창으로 열어 거기서 연다
+  function b64(s){ const u = new TextEncoder().encode(s); let b=''; u.forEach(x=>b+=String.fromCharCode(x)); return btoa(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+  function openFile(name, type, text){
+    return openOut(new URL('../f/open.html', location.href).href + '#' + b64(JSON.stringify({n:name, t:type, d:text})));
+  }
+  // 새 창(사파리 창)으로 연다. 막히면 지금 창에서
+  function openOut(url){
+    const w = window.open(url, '_blank');
+    if(!w) location.href = url;
+    return true;
+  }
+
+  // ---------- 명단 파일 읽기 (앱의 MainActivity.readXlsx / readCsv 와 같은 규칙) ----------
+  async function unzip(buf){
+    const dv = new DataView(buf), u8 = new Uint8Array(buf), files = {};
+    let eo = -1;
+    for(let i = buf.byteLength-22; i >= Math.max(0, buf.byteLength-65557); i--) if(dv.getUint32(i, true)===0x06054b50){ eo = i; break; }
+    if(eo<0) throw new Error('엑셀 파일이 아닙니다');
+    const count = dv.getUint16(eo+10, true); let p = dv.getUint32(eo+16, true);
+    const dec = new TextDecoder();
+    for(let k=0; k<count; k++){
+      if(dv.getUint32(p, true)!==0x02014b50) break;
+      const method = dv.getUint16(p+10, true), csize = dv.getUint32(p+20, true);
+      const nl = dv.getUint16(p+28, true), el = dv.getUint16(p+30, true), cl = dv.getUint16(p+32, true), lo = dv.getUint32(p+42, true);
+      const name = dec.decode(u8.subarray(p+46, p+46+nl));
+      p += 46+nl+el+cl;
+      if(!(name==='xl/sharedStrings.xml' || name==='xl/workbook.xml' || name==='xl/_rels/workbook.xml.rels' || name.startsWith('xl/worksheets/sheet'))) continue;
+      const start = lo + 30 + dv.getUint16(lo+26, true) + dv.getUint16(lo+28, true);
+      const raw = u8.subarray(start, start+csize);
+      if(method===0) files[name] = dec.decode(raw);
+      else if(method===8){
+        if(typeof DecompressionStream==='undefined') throw new Error('이 브라우저는 엑셀을 읽지 못합니다 (iOS 16.4 이상 필요). CSV로 저장해 고르세요');
+        const out = await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer();
+        files[name] = dec.decode(out);
+      }
+    }
+    return files;
+  }
+  const xml = s => new DOMParser().parseFromString(s, 'application/xml');
+  const tags = (n, t) => Array.from(n.getElementsByTagNameNS('*', t));
+  function colIndex(ref, fb){
+    if(!ref) return fb; let c = 0;
+    for(const ch of ref){ if(ch>='A' && ch<='Z') c = c*26 + (ch.charCodeAt(0)-64); else break; }
+    return c>0 ? c-1 : fb;
+  }
+  async function readXlsx(buf){
+    const f = await unzip(buf);
+    const ss = f['xl/sharedStrings.xml'] ? tags(xml(f['xl/sharedStrings.xml']), 'si').map(si =>
+      tags(si, 't').filter(t => !(t.parentNode && t.parentNode.localName==='rPh')).map(t=>t.textContent).join('')) : [];
+    // 첫 번째 시트 (workbook 의 첫 sheet → rels 의 대상), 못 찾으면 sheet1.xml
+    let sheet = 'xl/worksheets/sheet1.xml';
+    try{
+      const rid = /<sheet [^>]*r:id="([^"]+)"/.exec(f['xl/workbook.xml'])[1];
+      const rels = f['xl/_rels/workbook.xml.rels'];
+      const m = new RegExp('<Relationship [^>]*Id="'+rid+'"[^>]*Target="([^"]+)"|<Relationship [^>]*Target="([^"]+)"[^>]*Id="'+rid+'"').exec(rels);
+      let t = m[1] || m[2]; t = t.startsWith('/') ? t.slice(1) : 'xl/' + t;
+      if(f[t]) sheet = t;
+    }catch(e){}
+    if(!f[sheet]) throw new Error('엑셀 시트를 찾지 못했습니다');
+    return tags(xml(f[sheet]), 'row').map(r => {
+      const row = [];
+      tags(r, 'c').forEach(c => {
+        const type = c.getAttribute('t'), v = tags(c, 'v')[0];
+        let s = v ? v.textContent : tags(c, 't').map(t=>t.textContent).join('');
+        if(type==='s') s = ss[parseInt(s.trim(), 10)] ?? '';
+        else if(/^-?\d+\.0+$/.test(s)) s = s.slice(0, s.indexOf('.'));   // 숫자로 저장된 번호
+        const col = colIndex(c.getAttribute('r'), row.length);
+        while(row.length < col) row.push('');
+        row.push(s);
+      });
+      return row;
+    });
+  }
+  function readCsv(buf){
+    let t = new TextDecoder('utf-8').decode(buf);
+    if(t.includes('\uFFFD')) t = new TextDecoder('euc-kr').decode(buf);
+    if(t.charCodeAt(0)===0xFEFF) t = t.slice(1);
+    const rows = []; let row = [], f = '', q = false;
+    for(let i=0; i<t.length; i++){
+      const c = t[i];
+      if(q){ if(c==='"'){ if(t[i+1]==='"'){ f+='"'; i++; } else q = false; } else f += c; }
+      else if(c==='"') q = true;
+      else if(c===','){ row.push(f); f=''; }
+      else if(c==='\n'){ row.push(f); f=''; rows.push(row); row=[]; }
+      else if(c!=='\r') f += c;
+    }
+    if(f || row.length){ row.push(f); rows.push(row); }
+    return rows;
+  }
+  function pickFile(){
+    let inp = document.getElementById('webFile');
+    if(!inp){
+      inp = document.createElement('input'); inp.type = 'file'; inp.id = 'webFile'; inp.style.display = 'none';
+      inp.accept = '.xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv';
+      inp.onchange = async () => {
+        const file = inp.files && inp.files[0]; inp.value = '';
+        if(!file) return;
+        try{
+          const buf = await file.arrayBuffer(), u = new Uint8Array(buf);
+          const rows = u.length>3 && u[0]===0x50 && u[1]===0x4B ? await readXlsx(buf) : readCsv(buf);
+          window.onImported && window.onImported(rows);
+        }catch(e){ window.onImportError && window.onImportError(e.message || String(e)); }
+      };
+      document.body.appendChild(inp);
+    }
+    inp.click();
+  }
+
+  // ---------- 타임트리 (앱 2.0.11~2.0.12 웹판, 2.3.0) ----------
+  // 앱은 구글 캘린더에서 돌아오면 저절로 타임트리를 열지만, 웹은 누르는 동작이 있어야 다른 앱을 열 수 있어 [타임트리 열기]를 묻는다
+  let pendingTT = null;
+  function copyText(t){
+    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).catch(() => copyOld(t)); return; } }catch(e){}
+    copyOld(t);
+  }
+  function copyOld(t){
+    const a = document.createElement('textarea'); a.value = t; a.setAttribute('readonly', ''); a.style.cssText = 'position:fixed;top:0;opacity:0';
+    document.body.appendChild(a); a.select(); a.setSelectionRange(0, t.length);
+    try{ document.execCommand('copy'); }catch(e){}
+    a.remove();
+  }
+  function openTimeTree(tt){
+    copyText(tt);   // 돌아온 사이 다른 것을 복사했을 수 있어 한 번 더
+    location.href = 'timetree://';
+    setTimeout(() => { if(document.visibilityState==='visible') say('타임트리를 열지 못했습니다. 타임트리를 직접 열어 붙여 넣어 주세요'); }, 1800);
+  }
+  function askTimeTree(tt){
+    if(!window.ask){ openTimeTree(tt); return; }
+    ask('', [['타임트리 열기', () => openTimeTree(tt), true], ['다시 복사', () => { copyText(tt); say('복사했습니다'); }], ['닫기']]);
+    const m = document.getElementById('mText'), e = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    if(m) m.innerHTML = `타임트리에 붙여 넣을 글을 복사해 두었습니다.<br><b style="font-size:18px">${e(tt)}</b><br>타임트리 새 일정에 붙여 넣고 저장해 주세요.`;
+  }
+
+  // ---------- 앱의 window.Android 자리 ----------
+  window.Android = {
+    openSms(phone, text){
+      // 아이폰은 sms:번호&body= , 안드로이드는 sms:번호?body=
+      location.href = 'sms:' + phone + (text ? (isIOS ? '&' : '?') + 'body=' + encodeURIComponent(text) : '');
+      return true;
+    },
+    openDial(phone){ location.href = 'tel:' + phone; return true; },
+    openContact(name, phone, notes){ return openFile('contact.vcf', 'text/vcard', vcard(name, phone, notes)); },
+    // 연락처 한꺼번에 저장 (2.0.8, 웹판): 목록을 연락처 파일 하나(.vcf, 여러 명)로 묶어 연다 → 아이폰 [모든 연락처 추가]
+    // 웹은 휴대폰 연락처를 읽을 수 없어 같은 번호를 거르지 못한다. 저장했는지는 화면이 물어본다 (onContactsSaved {web:true})
+    saveContacts(json){
+      const list = JSON.parse(json);
+      openFile('contacts.vcf', 'text/vcard', list.map(c => vcard(c.name, c.phone, c.note)).join('\r\n'));
+      setTimeout(() => window.onContactsSaved && window.onContactsSaved({web:true}), 1500);
+    },
+    // 부재중 다시 전화: 그 시각의 구글 캘린더 일정(15분)으로
+    setAlarm(id, when, title, text, phone){
+      calendar(title, when, when + 900000, '', [text, '전화: tel:' + phone].filter(Boolean).join('\n'));
+      return 'cal';
+    },
+    // 캘린더에 넣은 일정은 웹에서 지울 수 없다
+    cancelAlarm(id){ setTimeout(()=>say('캘린더에 넣은 다시 전화 일정은 캘린더에서 지워 주세요'), 2800); },
+    // 약속: 구글 캘린더 일정 → 돌아오면 타임트리 (앱 2.0.11, 웹판 2.3.0)
+    // 타임트리에 붙여 넣을 글(tt: 내 이름/고객 이름/지역/AP·OT)은 누를 때 바로 복사한다 (아이폰은 누른 순간에만 복사가 허용됨)
+    openCalendar(title, begin, end, place, desc, tt){
+      if(tt){ copyText(tt); pendingTT = tt; }
+      return calendar(title, begin, end, place, desc);
+    },
+    hasTimeTree(){ return true; },   // 웹은 설치 여부를 알 수 없다
+    isRestored(){ return true; },    // 2.2.1(완전히 끄면 첫 화면)은 앱만: 웹은 끈 것과 휴대폰이 정리한 것을 가리지 못해 보던 화면을 되살린다
+    // 명단 양식 다운로드 (1.8.2): 같이 올린 양식 엑셀을 받는다
+    saveForm(){
+      const a = document.createElement('a');
+      a.href = 'form.xlsx'; a.download = '비너스_문자명단_양식.xlsx';
+      document.body.appendChild(a); a.click(); a.remove();
+      say('명단 양식을 받습니다. 다운로드(파일 앱)에서 열어 적으세요');
+    },
+    isNightMode(){ return matchMedia('(prefers-color-scheme: dark)').matches; },
+    setDark(dark){},   // 위 상태 표시줄은 늘 머리글 자주색 (theme-color #7a1350, 1.9.0)
+    pickFile,
+    exit(){}
+  };
+
+  // 웹판 안내 (1.11.0): 첫 화면 = (사파리에서 열었으면) 홈 화면 추가 안내 / 설정 화면 = 캘린더 알림 안내 + 판 번호
+  window.webExtra = function(where){
+    if(where==='home') return isIOS && !standalone ? `<p class="note" style="color:var(--miss)"><b>먼저 홈 화면에 추가하세요.</b> 사파리 아래 [공유] → [홈 화면에 추가] 후 홈 화면의 비너스로 여세요. 사파리에서 그냥 쓰면 오래 안 열 때 명단·기록이 지워질 수 있습니다.</p>` : '';
+    return `<label style="margin-top:22px">캘린더 알림</label>
+      <p class="note" style="margin-top:0">약속과 부재중 '다시 전화'는 <b>구글 캘린더</b> 일정으로 들어갑니다. 열린 구글 캘린더에서 [저장]을 눌러야 알림이 옵니다.
+      알림이 일정 시작 때 오게 하려면 구글 캘린더 설정 > 기본 알림을 '이벤트 시작 시'로 해 두세요.
+      약속은 [캘린더]를 누를 때 타임트리에 붙여 넣을 글(내 이름/고객 이름/지역/AP, 리쿠르팅은 OT)이 복사되고, 구글 캘린더에서 돌아오면 [타임트리 열기]가 나옵니다.</p>
+      <p class="note">비너스 웹 v${VERSION} · 명단과 기록은 이 휴대폰에만 저장됩니다.</p>`;
+  };
+
+  // 다른 앱(캘린더·문자)에 다녀오면: 앱의 onResume 과 같게. 구글 캘린더에서 돌아온 때는 타임트리 열기를 묻는다 (2.3.0)
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState!=='visible') return;
+    if(pendingTT){ const tt = pendingTT; pendingTT = null; setTimeout(() => askTimeTree(tt), 400); }
+    if(window.onResumeApp) window.onResumeApp();
+  });
+  // 휴대폰 다크 모드가 바뀌면 바로 따라감
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => window.applyTheme && applyTheme());
+  // 저장소를 지우지 말라고 브라우저에 요청 + 꺼진 상태에서도 열리게
+  if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+  if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost'))
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+})();
