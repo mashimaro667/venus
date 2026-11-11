@@ -14,7 +14,7 @@
 <meta name="theme-color" content="#7a1350">
 <meta name="format-detection" content="telephone=no">
 <meta name="robots" content="noindex, nofollow">
-<script src="web.js?v=2.3.5"></script>
+<script src="web.js?v=2.3.6"></script>
 <style>
 /* 화면 모드: html 의 data-theme (light/dark) 로 바꾼다. 자동이면 휴대폰 설정을 따른다 (applyTheme) */
 :root{--bg:#f4f5f8;--card:#fff;--text:#1d2230;--sub:#6b7280;--line:#e5e7eb;--accent:#3b4a8c;--link:#3b4a8c;--accent2:#c08a2e;--ok:#1f8a4c;--tr:#3b4a8c;--vu:#b2721f;--rc:#2a8a74;--call:#2e9d5b;--miss:#c4483b;color-scheme:light}
@@ -107,7 +107,8 @@ textarea{width:100%;min-height:200px;padding:12px;border:1px solid var(--line);b
 .rec3 .btn{min-width:0;padding:14px 4px;font-weight:700;color:#fff}
 .rec3.four{grid-template-columns:repeat(4,1fr)}   /* 2.0.3 리쿠르팅: 부재중 · 통화완료 · CIS · TS / 2.3.5 부재중 · 통화완료 · 약속 · 거절 */
 .rec3.five{grid-template-columns:repeat(5,1fr)} .rec3.five .btn{font-size:13px;padding:14px 1px;white-space:nowrap;letter-spacing:-.5px}   /* 2.3.5 리쿠르팅: 부재중 · 통화완료 · CIS · TS · 거절 */
-.btn.ts{background:var(--rc);border-color:var(--rc)}
+.rec3.six .btn{font-size:15px;white-space:nowrap}   /* 2.3.6 리쿠르팅: 부재중 · 통화완료 · CIS / TS · 재접촉 · 거절 (세 칸씩 두 줄) */
+.btn.ts{background:var(--rc);border-color:var(--rc)} .btn.re{background:var(--link);border-color:var(--link)}
 .btn.miss{background:var(--miss);border-color:var(--miss)} .btn.done{background:var(--call);border-color:var(--call)} .btn.appt{background:var(--accent2);border-color:var(--accent2)} .btn.no{background:var(--sub);border-color:var(--sub)}
 .remind{margin-top:10px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb, var(--miss) 12%, var(--card));display:flex;align-items:center;gap:8px;font-size:15px}
 .remind span{flex:1}
@@ -125,7 +126,7 @@ ul.names li .st{font-size:15px}
 .namebar .btn{flex:0 0 auto;min-width:0;padding:12px 14px}
 .tbox{margin-top:10px}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
-.tabs{display:grid;grid-template-columns:1fr 1fr;margin-top:16px;border-bottom:2px solid var(--line)}
+.tabs{display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:16px;border-bottom:2px solid var(--line)}
 .tabs button{border:0;background:none;color:var(--sub);font-size:17px;font-weight:700;padding:12px 0;margin-bottom:-2px;border-bottom:3px solid transparent}
 .tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
 .chips button{border:1px solid var(--line);background:var(--card);color:var(--link);border-radius:999px;padding:6px 12px;font-size:14px}
@@ -203,10 +204,12 @@ const HONS = ['님','고객님'];
 // 1.13.0 모양 엑셀을 불러와도 그룹 번호 대신 이름표의 이름(없으면 '그룹N')을 분류로 쓴다
 let groupNames = load('groups', {});   // 1.13.0 이름표 (되돌릴 때만 씀)
 const GROUP_MAX = 10;
+// re = 재접촉 문자 본문 (2.3.6): 고객 화면 기록 [재접촉]에서 보낸다. 호칭·머리말·마무리는 인사말과 같다
+const DEFAULT_RE = '지난번에 연락드렸던 {내이름}입니다. 편하신 때 연락 주시면 감사하겠습니다.';
 const DEFAULT_TPL = {
-  tr:  {hon:'님', head:'안녕하세요.', body:'(이관고객님께 드릴 내용을 [문자 문구]에서 적어 주세요)', tail:'', appt:'{날짜} {시간}에 {장소}에서 뵙겠습니다.'},
-  vu:  {hon:'님', head:'안녕하세요.', body:'(밸류업 고객님께 드릴 내용을 [문자 문구]에서 적어 주세요)', tail:'', appt:'{날짜} {시간}에 {장소}에서 뵙겠습니다.'},
-  rc:  {hon:'님', head:'안녕하세요.', body:'(리쿠르팅 대상께 드릴 내용을 [문자 문구]에서 적어 주세요)', tail:'', appt:'{날짜} {시간}에 {면접관}과 면접이 있습니다.'},
+  tr:  {hon:'님', head:'안녕하세요.', body:'(이관고객님께 드릴 내용을 [문자 문구]에서 적어 주세요)', tail:'', appt:'{날짜} {시간}에 {장소}에서 뵙겠습니다.', re:DEFAULT_RE},
+  vu:  {hon:'님', head:'안녕하세요.', body:'(밸류업 고객님께 드릴 내용을 [문자 문구]에서 적어 주세요)', tail:'', appt:'{날짜} {시간}에 {장소}에서 뵙겠습니다.', re:DEFAULT_RE},
+  rc:  {hon:'님', head:'안녕하세요.', body:'(리쿠르팅 대상께 드릴 내용을 [문자 문구]에서 적어 주세요)', tail:'', appt:'{날짜} {시간}에 {면접관}과 면접이 있습니다.', re:DEFAULT_RE},
   appt:{hon:'님', head:'안녕하세요.', body:'{날짜} {시간}에 {장소}에서 뵙겠습니다.', tail:'감사합니다.'},
   // 광고DB 보장분석 신청자 (2.2.0, 2026-10-22 지정 문구). 약속안내 탭 없음
   ba:  {hon:'님', head:'', body:'', tail:'', appt:''}};
@@ -813,7 +816,7 @@ function detail(i){
 // 부재중: 1·2·3시간 뒤 또는 정한 시각에 '다시 전화' 휴대폰 알림 (고객마다 하나, 새로 걸면 바뀜. 통화완료를 적으면 꺼짐)
 // 약속: 날짜·시간·장소 → [저장] [캘린더] [문자] 버튼을 따로 누른다 (1.16.0, 그 전엔 저장 → 캘린더 → 문자가 이어졌음)
 let records = load('records', {});   // 번호 → [{type:'miss'|'call'|'appt'|'no', at:'yyyy-mm-dd hh:mm', remindAt:밀리초, off, memo, date:'yyyy-mm-dd', time:'hh:mm', place}]
-const RN = {miss:'부재중', call:'통화완료', appt:'약속', no:'거절'}, RI = {miss:'📵', call:'✅', appt:'📅', no:'🚫'};   // 거절 2.3.5
+const RN = {miss:'부재중', call:'통화완료', appt:'약속', re:'재접촉', no:'거절'}, RI = {miss:'📵', call:'✅', appt:'📅', re:'💬', no:'🚫'};   // 거절 2.3.5, 재접촉 2.3.6
 const REC = Object.fromEntries(Object.keys(RN).map(k=>[k, RI[k]+' '+RN[k]]));
 // 리쿠르팅 (2.0.3, 2026-10-13 지시): 약속 대신 CIS · TS. 기록은 약속(appt)과 같고 iv:'cis'|'ts'를 붙인다
 // 문구의 {면접관} 자리: CIS = 부지점장님, TS = 본부장님. 리쿠르팅은 장소·링크를 쓰지 않는다
@@ -838,18 +841,20 @@ function recordCard(i){
   const c = customers[i], p = pendingRemind(c);
   const hist = recsOf(c).map((r,k)=>({...r,k})).reverse();
   return `<div class="card" style="margin-top:14px"><div class="meta" style="margin-bottom:8px">기록</div>
-    <div class="rec3${c.kind==='rc' ? ' five' : ' four'}"><button class="btn miss" onclick="recMiss(${i})">부재중</button>
+    <div class="rec3${c.kind==='rc' ? ' six' : ' five'}"><button class="btn miss" onclick="recMiss(${i})">부재중</button>
       <button class="btn done" onclick="recCall(${i})">통화완료</button>
       ${c.kind==='rc' ? `<button class="btn appt" onclick="show(()=>apptForm(${i},true,'cis'))">CIS</button>
       <button class="btn ts" onclick="show(()=>apptForm(${i},true,'ts'))">TS</button>`
       : `<button class="btn appt" onclick="show(()=>apptForm(${i},true))">약속</button>`}
+      <button class="btn re" onclick="recRe(${i})">재접촉</button>
       <button class="btn no" onclick="recNo(${i})">거절</button></div>
     ${p?`<div class="remind"><span>⏰ ${esc(whenLabel(p.remindAt))}에 다시 전화 알림</span><button onclick="offRemind(${i})">알림 끄기</button></div>`:''}
     ${hist.length?`<ul class="hist">${hist.map(r=>`<li><span class="when">${esc(r.at.slice(5).replace('-','/'))}</span>${recLabel(r)}
       ${r.type==='miss' && r.remindAt?`<span class="meta"> · ⏰ ${esc(whenLabel(r.remindAt))}${r.off?' (꺼짐)':''}</span>`:''}
       ${r.type==='appt'?`<span class="memo">${esc(apptDate(r.date))} ${esc(apptTime(r.time))}${r.place?' · '+esc(r.place):''}${r.link?'<br>🔗 '+esc(r.link):''}</span>`:''}
       ${r.memo?`<span class="memo">${esc(r.memo)}</span>`:''}
-      <div class="acts">${r.type==='appt'?`<button onclick="apptCal(${i},${r.k})">캘린더</button><button onclick="apptSms(${i},${r.k})">약속 문자</button>`:''}
+      ${r.type==='re' && r.msg?`<span class="memo">${esc(r.msg.length>60 ? r.msg.slice(0,60)+'…' : r.msg)}</span>`:''}
+      <div class="acts">${r.type==='appt'?`<button onclick="apptCal(${i},${r.k})">캘린더</button><button onclick="apptSms(${i},${r.k})">약속 문자</button>`:''}${r.type==='re'?`<button onclick="reSms(${i},${r.k})">다시 보내기</button>`:''}
         <button class="x" onclick="delRec(${i},${r.k})">지우기</button></div></li>`).join('')}</ul>`
       :'<p class="note" style="margin:10px 0 0">아직 기록이 없습니다.</p>'}</div>`;
 }
@@ -901,6 +906,22 @@ function recNo(i){
         addRec(c, {type:'no', memo:document.getElementById('m_memo').value.trim()});
         if(had) offRemind(i, true);
         toast('거절로 적었습니다' + (had ? ' · 다시 전화 알림은 껐습니다' : '')); detail(i); },true],['취소']]);
+}
+// 재접촉 (2.3.6, 2026-11-11 지시: "기록에 부재중 통화완료 약속 재접촉, 재접촉은 문자 보내는 기능으로"):
+// 그 고객 문구의 [재접촉] 칸으로 채운 문자를 보여 주고(이 고객만 고칠 수 있음) → [문자 보내기] = 기록 💬 재접촉 + 문자 앱 열기
+function reText(c){ const t = tplOf(keyFor(c)); return composeTpl({...t, body:t.re ?? DEFAULT_RE}, c.name); }
+function recRe(i){
+  const c = customers[i];
+  askForm('재접촉 문자를 보냅니다. 이 고객에게만 고칠 수 있습니다.', `<textarea id="m_msg" style="min-height:150px">${esc(reText(c))}</textarea>`,
+    [['문자 보내기',()=>{ const msg = document.getElementById('m_msg').value.trim(); if(!msg){ toast('보낼 문자가 비어 있습니다'); return; }
+        addRec(c, {type:'re', msg});
+        const ok = window.Android ? Android.openSms(c.phone, msg) : (toast(msg), true);
+        toast(ok ? '재접촉으로 적었습니다' : '재접촉으로 적었지만 문자 앱을 열지 못했습니다'); detail(i); },true],['취소']]);
+}
+function reSms(i, k){
+  const c = customers[i], r = recsOf(c)[k]; if(!r) return;
+  const ok = window.Android ? Android.openSms(c.phone, r.msg || reText(c)) : (toast(r.msg || reText(c)), true);
+  if(!ok) toast('문자 앱을 열지 못했습니다');
 }
 function delRec(i, k){
   const c = customers[i], r = recsOf(c)[k]; if(!r) return;
@@ -1221,7 +1242,7 @@ function editLetters(){
       <button class="kind rc" onclick="show(()=>editTpl('rc'))">리쿠르팅</button>
     </div>
     ${window.noAd ? '' : `<button class="btn setbtn" style="border-top:5px solid var(--vu)" onclick="show(()=>editTpl('ba'))">광고DB · 보장분석 <small>신청자에게 보내는 첫 문자</small></button>`}
-    <p class="note">문구마다 [인사말] / [약속안내] 탭이 있습니다${window.noAd ? '' : ' (보장분석은 인사말만)'}. 날짜·시간·장소는 약속안내 탭에서 정하고, [약속] 화면에서 고객마다 다시 고칠 수 있습니다.</p>`;
+    <p class="note">문구마다 [인사말] / [약속안내] / [재접촉] 탭이 있습니다${window.noAd ? '' : ' (보장분석은 인사말만)'}. 날짜·시간·장소는 약속안내 탭에서 정하고, [약속] 화면에서 고객마다 다시 고칠 수 있습니다.</p>`;
 }
 // 밸류업 문구 칸 (1.14.0): 명단에 있는 분류 이름 + 문구를 따로 써 둔 이름 (가나다순). 고정 목록 없음
 function vuGroups(){
@@ -1263,7 +1284,7 @@ function editTpl(key){
     <label>호칭</label>
     <div class="namebar"><span class="lockname">🔒 고객 이름</span>${HONS.map(h=>`<button class="btn seg" id="hon_${h}" onclick="pickHon('${h}')">${h}</button>`).join('')}</div>
     <!-- 1.8.0: 인사말 / 약속안내 탭 (호칭은 두 탭이 같이 씀). 탭을 바꿔도 칸은 그대로 두고 숨기기만 해서 한 번에 저장 -->
-    <div class="tabs${key==='ba' ? ' hidden' : ''}"><button id="tab_g" onclick="tplTab('g')">${key==='rc' ? '접수' : '인사말'}</button><button id="tab_a" onclick="tplTab('a')">${key==='rc' ? '약속' : '약속안내'}</button></div>
+    <div class="tabs${key==='ba' ? ' hidden' : ''}"><button id="tab_g" onclick="tplTab('g')">${key==='rc' ? '접수' : '인사말'}</button><button id="tab_a" onclick="tplTab('a')">${key==='rc' ? '약속' : '약속안내'}</button><button id="tab_r" onclick="tplTab('r')">재접촉</button></div>
     <div id="pane_g">
       <p class="note" style="margin:8px 0 0">문자는 ${key==='rc' ? '맨 위 <b>[보험설계사 채용 상담 접수 안내]</b> 다음 줄부터 ' : ''}<b>고객 이름 + 호칭, 머리말</b> / 본문 / 마무리 순서로 이어집니다.</p>
       <!-- 1.12.1: 고객님 이름·내 이름(이름 + 직책) 자리. 마지막으로 누른 칸에 넣는다 -->
@@ -1282,6 +1303,13 @@ function editTpl(key){
       <p class="note" style="margin:6px 0 0">${key==='rc' ? '{날짜} {시간} 자리에 약속 날짜·시간이, {면접관} 자리에 CIS는 부지점장님, TS는 본부장님이 들어갑니다.' : "{날짜} {시간} {장소} {링크} 자리에 약속 내용이 들어갑니다. 장소명이 없으면 '{장소}에서'는 빠지고, 링크는 {링크}가 없으면 맨 아래에 붙습니다."}</p>
       <div class="card" style="margin-top:10px"><div class="meta" style="margin-bottom:8px">${key==='rc' ? '약속' : '약속안내'} 미리보기 (예: 내일 오후 2시 · ${key==='rc' ? 'CIS 부지점장님' : '역삼역 스타벅스'})</div><div class="preview" id="t_aprev"></div><div class="count" id="t_acnt"></div></div>
     </div>
+    <!-- 2.3.6 재접촉 탭: 고객 화면 기록 [재접촉]에서 보내는 문자 -->
+    <div id="pane_r" class="hidden">
+      <p class="note" style="margin:8px 0 0">고객 화면 기록 [재접촉]에서 보내는 문자입니다. 호칭·머리말·마무리는 ${key==='rc' ? '접수' : '인사말'} 탭과 같고, 아래 칸이 본문 자리에 들어갑니다. 보내기 전에 고객마다 고칠 수 있습니다.</p>
+      <div class="chips" style="margin-top:10px">${chipBtns(CHIP_WHO, "'t_re'")}</div>
+      <textarea id="t_re" class="tbox" style="min-height:110px" placeholder="재접촉 문자&#10;예: 지난번에 연락드렸던 {내이름}입니다." oninput="tplPreview()">${esc(t.re ?? DEFAULT_RE)}</textarea>
+      <div class="card" style="margin-top:10px"><div class="meta" style="margin-bottom:8px">재접촉 미리보기 (예: 홍길동)</div><div class="preview" id="t_rprev"></div><div class="count" id="t_rcnt"></div></div>
+    </div>
     <button class="btn primary" style="width:100%" onclick="saveTpl()">저장</button>
     ${grp && own ? `<button class="btn" style="width:100%;margin-top:10px" onclick="resetTpl()">기본 문구로 되돌리기</button>` : ''}`;
   window._lastTa = 't_head';
@@ -1291,9 +1319,9 @@ function editTpl(key){
 }
 function tplTab(x){
   window._tplTab = x; window._tplTabKey = window._tplKey;
-  ['g','a'].forEach(k=>{ document.getElementById('tab_'+k).classList.toggle('on', k===x); document.getElementById('pane_'+k).classList.toggle('hidden', k!==x); });
+  ['g','a','r'].forEach(k=>{ document.getElementById('tab_'+k).classList.toggle('on', k===x); document.getElementById('pane_'+k).classList.toggle('hidden', k!==x); });
 }
-function readTpl(){ const g = id => document.getElementById(id).value; return {hon:window._hon, head:g('t_head').trim(), body:g('t_body'), tail:g('t_tail'), appt:g('t_appt')}; }
+function readTpl(){ const g = id => document.getElementById(id).value; return {hon:window._hon, head:g('t_head').trim(), body:g('t_body'), tail:g('t_tail'), appt:g('t_appt'), re:g('t_re')}; }
 // {날짜} 등 단추: 약속 칸의 커서 자리에 넣는다
 function insAppt(x, id){
   const a = document.getElementById(id || 't_appt'), s = a.selectionStart ?? a.value.length, e = a.selectionEnd ?? s;
@@ -1310,6 +1338,9 @@ function tplPreview(){
   const a = apptFill(composeTpl({...t, body:t.appt}, '홍길동'), {date:`${d.getFullYear()}-${z2(d.getMonth()+1)}-${z2(d.getDate())}`, time:'14:00', place:window._tplKey==='rc' ? '' : '역삼역 스타벅스', link:'', iv:'cis'});
   document.getElementById('t_aprev').textContent = a;
   document.getElementById('t_acnt').textContent = a.length + '자' + (a.length>45 ? ' · 길어서 문자 앱이 장문(LMS)으로 보냅니다' : '');
+  const r = composeTpl({...t, body:t.re}, '홍길동');   // 2.3.6 재접촉
+  document.getElementById('t_rprev').textContent = r;
+  document.getElementById('t_rcnt').textContent = r.length + '자' + (r.length>45 ? ' · 길어서 문자 앱이 장문(LMS)으로 보냅니다' : '');
   document.getElementById('t_prev').textContent = s;
   document.getElementById('t_cnt').textContent = s.length + '자' + (s.length>45 ? ' · 길어서 문자 앱이 장문(LMS)으로 보냅니다' : '');
 }
